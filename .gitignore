@@ -1,0 +1,27 @@
+# Build artifacts
+.build/
+DerivedData/
+dist/
+*.app
+
+# Distribution packages
+*.zip
+*.dmg
+*.pkg
+
+# SwiftPM / Xcode local state
+.swiftpm/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+.netrc
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Temp / editor
+*.swp
+*.tmp
