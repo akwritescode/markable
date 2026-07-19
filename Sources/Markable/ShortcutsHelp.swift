@@ -12,6 +12,7 @@ struct ShortcutGroup: Identifiable {
 let shortcutGroups: [ShortcutGroup] = [
     ShortcutGroup("Files", [
         ("New File", "⌘N"),
+        ("New Tab", "⌘T"),
         ("Open File or Folder", "⌘O"),
         ("Open Folder", "⇧⌘O"),
         ("Save", "⌘S"),

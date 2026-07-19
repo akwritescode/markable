@@ -6,8 +6,6 @@ import WebKit
 /// and NSTextView (edit mode). Views register themselves on creation.
 @MainActor
 final class FindState: ObservableObject {
-    static let shared = FindState()
-
     @Published var isVisible = false
     @Published var query = ""
     @Published var showingShortcuts = false
@@ -40,9 +38,9 @@ final class FindState: ObservableObject {
     /// ⌘E: seed the query from the current selection (editor or preview).
     func useSelectionForFind() {
         if targetsPreview, let webView {
-            webView.evaluateJavaScript("window.getSelection().toString()") { value, _ in
+            webView.evaluateJavaScript("window.getSelection().toString()") { [weak self] value, _ in
                 guard let selection = value as? String, !selection.isEmpty else { return }
-                Task { @MainActor in FindState.shared.query = selection }
+                Task { @MainActor in self?.query = selection }
             }
         } else if let textView {
             let range = textView.selectedRange()

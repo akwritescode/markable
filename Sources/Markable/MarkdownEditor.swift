@@ -6,6 +6,7 @@ import AppKit
 struct MarkdownEditor: NSViewRepresentable {
     @Binding var text: String
     var fileID: URL?
+    var find: FindState
     var zoom: Double = 1.0
 
     private var fontSize: CGFloat { 13.5 * zoom }
@@ -36,14 +37,14 @@ struct MarkdownEditor: NSViewRepresentable {
         ]
         textView.string = text
 
-        FindState.shared.textView = textView
+        find.textView = textView
         scrollView.hasVerticalScroller = true
         return scrollView
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NSTextView else { return }
-        FindState.shared.textView = textView
+        find.textView = textView
         if textView.font?.pointSize != fontSize {
             let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
             textView.font = font

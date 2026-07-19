@@ -21,9 +21,9 @@ final class Exporter {
 
     // MARK: - Public entry points
 
-    func exportPDF() {
-        guard let destination = savePanel(type: .pdf) else { return }
-        withRenderedPreview { webView, finish in
+    func exportPDF(for model: WorkspaceModel?) {
+        guard let destination = savePanel(for: model, type: .pdf) else { return }
+        withRenderedPreview(for: model) { webView, finish in
             webView.createPDF { result in
                 if case .success(let data) = result {
                     try? data.write(to: destination)
@@ -35,9 +35,9 @@ final class Exporter {
         }
     }
 
-    func exportHTML() {
-        guard let destination = savePanel(type: .html) else { return }
-        withRenderedPreview { webView, finish in
+    func exportHTML(for model: WorkspaceModel?) {
+        guard let destination = savePanel(for: model, type: .html) else { return }
+        withRenderedPreview(for: model) { webView, finish in
             webView.evaluateJavaScript(Self.captureHTMLJS) { value, _ in
                 if let html = value as? String {
                     try? html.write(to: destination, atomically: true, encoding: .utf8)
@@ -47,11 +47,11 @@ final class Exporter {
         }
     }
 
-    func exportWord() {
+    func exportWord(for model: WorkspaceModel?) {
         guard let docxType = UTType(filenameExtension: "docx"),
-              let destination = savePanel(type: docxType)
+              let destination = savePanel(for: model, type: docxType)
         else { return }
-        withRenderedPreview { webView, finish in
+        withRenderedPreview(for: model) { webView, finish in
             webView.evaluateJavaScript(Self.captureHTMLJS) { value, _ in
                 defer { finish() }
                 guard let html = value as? String else { return }
@@ -74,8 +74,8 @@ final class Exporter {
         }
     }
 
-    func printDocument() {
-        withRenderedPreview { webView, finish in
+    func printDocument(for model: WorkspaceModel?) {
+        withRenderedPreview(for: model) { webView, finish in
             let printInfo = NSPrintInfo.shared
             printInfo.horizontalPagination = .fit
             printInfo.verticalPagination = .automatic
@@ -94,9 +94,8 @@ final class Exporter {
 
     // MARK: - Offscreen rendering
 
-    private func savePanel(type: UTType) -> URL? {
-        let model = WorkspaceModel.shared
-        guard let file = model.selectedFile else { return nil }
+    private func savePanel(for model: WorkspaceModel?, type: UTType) -> URL? {
+        guard let file = model?.selectedFile else { return nil }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [type]
         panel.nameFieldStringValue = file.deletingPathExtension().lastPathComponent
@@ -106,14 +105,13 @@ final class Exporter {
     /// Renders the current document offscreen, then hands the web view to
     /// `completion`; call `finish` when done with it.
     private func withRenderedPreview(
+        for model: WorkspaceModel?,
         _ completion: @escaping @MainActor (WKWebView, @escaping @MainActor () -> Void) -> Void
     ) {
-        let model = WorkspaceModel.shared
-        guard model.selectedFile != nil else { return }
+        guard let model, model.selectedFile != nil else { return }
 
         let configuration = WKWebViewConfiguration()
-        configuration.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
-        configuration.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
+        configuration.setURLSchemeHandler(LocalFileSchemeHandler(), forURLScheme: LocalFileSchemeHandler.scheme)
         let webView = WKWebView(
             frame: NSRect(x: 0, y: 0, width: 794, height: 1123),
             configuration: configuration
@@ -127,10 +125,11 @@ final class Exporter {
         }
         sessions[key] = session
         webView.navigationDelegate = session
-        webView.loadHTMLString(
-            HTMLTemplate.page,
-            baseURL: model.selectedFile?.deletingLastPathComponent()
-        )
+        var baseURL: URL?
+        if let file = model.selectedFile {
+            baseURL = LocalFileSchemeHandler.schemeURL(for: file.deletingLastPathComponent())
+        }
+        webView.loadHTMLString(HTMLTemplate.page, baseURL: baseURL)
     }
 
     private final class RenderSession: NSObject, WKNavigationDelegate {

@@ -10,7 +10,19 @@ extension UTType {
 
 @MainActor
 final class WorkspaceModel: ObservableObject {
-    static let shared = WorkspaceModel()
+    /// One instance per open window, registered by ContentView so the app
+    /// delegate can find an idle window to reuse (or prompt-on-quit across
+    /// all of them) without a single app-wide shared instance.
+    private static var registry: [ObjectIdentifier: WorkspaceModel] = [:]
+    static var all: [WorkspaceModel] { Array(registry.values) }
+
+    static func register(_ model: WorkspaceModel) {
+        registry[ObjectIdentifier(model)] = model
+    }
+
+    static func unregister(_ model: WorkspaceModel) {
+        registry[ObjectIdentifier(model)] = nil
+    }
 
     nonisolated static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkd"]
 

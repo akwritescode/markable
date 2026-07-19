@@ -17,9 +17,11 @@ enum ViewMode: String, CaseIterable, Identifiable {
 }
 
 struct ContentView: View {
-    @EnvironmentObject var model: WorkspaceModel
-    @ObservedObject private var find = FindState.shared
+    /// Owned per window, so two windows/tabs never share one file's state.
+    @StateObject private var model = WorkspaceModel()
+    @StateObject private var find = FindState()
     @State private var mode: ViewMode = .preview
+    @Environment(\.openWindow) private var openWindow
 
     @AppStorage("theme") private var themeRaw = Theme.system.rawValue
     @AppStorage("previewZoom") private var zoom = 1.0
@@ -35,11 +37,22 @@ struct ContentView: View {
         } detail: {
             detail
         }
+        .environmentObject(model)
         .navigationTitle(title)
         .navigationSubtitle(model.isDirty ? "Edited" : "")
+        .focusedSceneValue(\.workspaceModel, model)
+        .focusedSceneValue(\.findState, find)
         .onAppear {
             find.targetsPreview = mode != .edit
             loadCustomCSS()
+            WorkspaceModel.register(model)
+            AppDelegate.current?.openNewWindow = { openWindow(id: "main") }
+            if !PendingOpens.queue.isEmpty {
+                model.openURL(PendingOpens.queue.removeFirst())
+            }
+        }
+        .onDisappear {
+            WorkspaceModel.unregister(model)
         }
         .onChange(of: mode) { newMode in
             find.targetsPreview = newMode != .edit
@@ -150,17 +163,17 @@ struct ContentView: View {
         switch mode {
         case .preview:
             MarkdownWebView(
-                markdown: model.text, baseURL: directory, fileID: file,
+                markdown: model.text, baseURL: directory, fileID: file, find: find,
                 theme: theme, customCSS: customCSSText, zoom: zoom
             )
         case .edit:
-            MarkdownEditor(text: textBinding, fileID: file, zoom: zoom)
+            MarkdownEditor(text: textBinding, fileID: file, find: find, zoom: zoom)
         case .split:
             HSplitView {
-                MarkdownEditor(text: textBinding, fileID: file, zoom: zoom)
+                MarkdownEditor(text: textBinding, fileID: file, find: find, zoom: zoom)
                     .frame(minWidth: 240)
                 MarkdownWebView(
-                    markdown: model.text, baseURL: directory, fileID: file,
+                    markdown: model.text, baseURL: directory, fileID: file, find: find,
                     theme: theme, customCSS: customCSSText, zoom: zoom
                 )
                 .frame(minWidth: 240)
@@ -192,13 +205,13 @@ struct ContentView: View {
 
     private func jump(to item: OutlineItem) {
         if mode == .edit {
-            if let textView = FindState.shared.textView {
+            if let textView = find.textView {
                 let range = NSRange(location: item.utf16Offset, length: 0)
                 textView.setSelectedRange(range)
                 textView.scrollRangeToVisible(range)
             }
         } else {
-            FindState.shared.webView?.evaluateJavaScript("jumpToHeading(\(item.id))")
+            find.webView?.evaluateJavaScript("jumpToHeading(\(item.id))")
         }
     }
 
@@ -225,7 +238,7 @@ struct ContentView: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-            FindTextField()
+            FindTextField(find: find)
             Button {
                 find.findNext(forward: false)
             } label: {
@@ -320,7 +333,7 @@ struct ContentView: View {
 
 /// Separate view so focus grabs reliably when the bar appears.
 private struct FindTextField: View {
-    @ObservedObject private var find = FindState.shared
+    @ObservedObject var find: FindState
     @FocusState private var focused: Bool
 
     var body: some View {

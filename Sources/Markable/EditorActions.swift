@@ -1,14 +1,12 @@
 import AppKit
 
 /// Markdown formatting operations on the active editor text view.
-/// No-ops when no editor is on screen (Preview mode).
+/// No-ops when no editor is on screen (Preview mode) or no window is focused.
 @MainActor
 enum EditorActions {
-    private static var textView: NSTextView? { FindState.shared.textView }
-
     // MARK: - Inline wrapping (bold, italic, code, strikethrough)
 
-    static func toggleWrap(_ marker: String) {
+    static func toggleWrap(_ marker: String, in textView: NSTextView?) {
         guard let tv = textView else { return }
         let contents = tv.string as NSString
         let range = tv.selectedRange()
@@ -44,7 +42,7 @@ enum EditorActions {
 
     // MARK: - Links
 
-    static func insertLink() {
+    static func insertLink(in textView: NSTextView?) {
         guard let tv = textView else { return }
         let contents = tv.string as NSString
         let range = tv.selectedRange()
@@ -60,8 +58,8 @@ enum EditorActions {
     // MARK: - Line-level operations (headings, quotes, lists)
 
     /// level 0 removes the heading marker.
-    static func setHeading(_ level: Int) {
-        transformSelectedLines { line in
+    static func setHeading(_ level: Int, in textView: NSTextView?) {
+        transformSelectedLines(in: textView) { line in
             guard !line.isEmpty else { return line }
             var stripped = line
             let hashes = line.prefix(while: { $0 == "#" })
@@ -73,17 +71,17 @@ enum EditorActions {
         }
     }
 
-    static func toggleBlockquote() { toggleLinePrefix("> ") }
-    static func toggleBulletList() { toggleLinePrefix("- ") }
-    static func toggleTaskList() { toggleLinePrefix("- [ ] ") }
+    static func toggleBlockquote(in textView: NSTextView?) { toggleLinePrefix("> ", in: textView) }
+    static func toggleBulletList(in textView: NSTextView?) { toggleLinePrefix("- ", in: textView) }
+    static func toggleTaskList(in textView: NSTextView?) { toggleLinePrefix("- [ ] ", in: textView) }
 
-    private static func toggleLinePrefix(_ prefix: String) {
-        transformSelectedLines(togglingAll: true, prefix: prefix)
+    private static func toggleLinePrefix(_ prefix: String, in textView: NSTextView?) {
+        transformSelectedLines(togglingAll: true, prefix: prefix, in: textView)
     }
 
     // MARK: - Plumbing
 
-    private static func transformSelectedLines(_ transform: (String) -> String) {
+    private static func transformSelectedLines(in textView: NSTextView?, _ transform: (String) -> String) {
         guard let tv = textView else { return }
         let contents = tv.string as NSString
         let lineRange = contents.lineRange(for: tv.selectedRange())
@@ -100,7 +98,7 @@ enum EditorActions {
                 select: NSRange(location: lineRange.location, length: (newBlock as NSString).length))
     }
 
-    private static func transformSelectedLines(togglingAll: Bool, prefix: String) {
+    private static func transformSelectedLines(togglingAll: Bool, prefix: String, in textView: NSTextView?) {
         guard let tv = textView else { return }
         let contents = tv.string as NSString
         let lineRange = contents.lineRange(for: tv.selectedRange())
@@ -108,7 +106,7 @@ enum EditorActions {
         let nonEmpty = block.components(separatedBy: "\n").filter { !$0.isEmpty }
         let allPrefixed = !nonEmpty.isEmpty && nonEmpty.allSatisfy { $0.hasPrefix(prefix) }
 
-        transformSelectedLines { line in
+        transformSelectedLines(in: textView) { line in
             guard !line.isEmpty else { return line }
             if allPrefixed {
                 return String(line.dropFirst(prefix.count))

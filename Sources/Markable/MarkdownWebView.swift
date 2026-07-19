@@ -1,19 +1,19 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import WebKit
 
 struct MarkdownWebView: NSViewRepresentable {
     let markdown: String
     let baseURL: URL?
     var fileID: URL?
+    var find: FindState
     var theme: Theme = .system
     var customCSS: String = ""
     var zoom: Double = 1.0
 
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
-        // Allow relative images next to the .md file to load.
-        configuration.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
-        configuration.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
+        configuration.setURLSchemeHandler(LocalFileSchemeHandler(), forURLScheme: LocalFileSchemeHandler.scheme)
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
@@ -21,14 +21,14 @@ struct MarkdownWebView: NSViewRepresentable {
         webView.allowsMagnification = true
         webView.pageZoom = zoom
 
-        FindState.shared.webView = webView
+        find.webView = webView
         loadTemplate(in: webView, coordinator: context.coordinator)
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         let coordinator = context.coordinator
-        FindState.shared.webView = webView
+        find.webView = webView
 
         if webView.pageZoom != zoom {
             webView.pageZoom = zoom
@@ -74,7 +74,8 @@ struct MarkdownWebView: NSViewRepresentable {
         coordinator.pendingMarkdown = markdown
         coordinator.theme = theme
         coordinator.customCSS = customCSS
-        webView.loadHTMLString(HTMLTemplate.page, baseURL: baseURL)
+        let resolvedBaseURL = baseURL.flatMap(LocalFileSchemeHandler.schemeURL(for:))
+        webView.loadHTMLString(HTMLTemplate.page, baseURL: resolvedBaseURL)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -140,4 +141,43 @@ struct MarkdownWebView: NSViewRepresentable {
             decisionHandler(.allow)
         }
     }
+}
+
+/// Serves `markable-local://` requests by reading the matching path straight
+/// off disk. Markable itself isn't sandboxed, so this has no more access
+/// than the app already does — it just avoids WKWebView's separate,
+/// unrelated restriction on reading local files loaded via `loadHTMLString`.
+final class LocalFileSchemeHandler: NSObject, WKURLSchemeHandler {
+    static let scheme = "markable-local"
+
+    /// Rewrites a `file://` directory URL to the matching `markable-local://`
+    /// URL so relative resources resolve through this handler instead of
+    /// hitting WKWebView's local-file read restriction.
+    static func schemeURL(for fileURL: URL) -> URL? {
+        guard var components = URLComponents(url: fileURL, resolvingAgainstBaseURL: false) else { return nil }
+        components.scheme = scheme
+        return components.url
+    }
+
+    func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
+        guard let url = urlSchemeTask.request.url else {
+            urlSchemeTask.didFailWithError(URLError(.badURL))
+            return
+        }
+        let fileURL = URL(fileURLWithPath: url.path)
+        guard let data = try? Data(contentsOf: fileURL) else {
+            urlSchemeTask.didFailWithError(URLError(.fileDoesNotExist))
+            return
+        }
+        let mimeType = UTType(filenameExtension: fileURL.pathExtension)?.preferredMIMEType
+            ?? "application/octet-stream"
+        let response = URLResponse(
+            url: url, mimeType: mimeType, expectedContentLength: data.count, textEncodingName: nil
+        )
+        urlSchemeTask.didReceive(response)
+        urlSchemeTask.didReceive(data)
+        urlSchemeTask.didFinish()
+    }
+
+    func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {}
 }
